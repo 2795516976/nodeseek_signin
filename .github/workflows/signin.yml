@@ -1,0 +1,22 @@
+name: NodeSeek Signin
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 每天 UTC 0 点（北京时间早 8 点）
+  workflow_dispatch:       # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests cloudscraper
+      - name: Run signin
+        run: python nodeseek_signin.py
+        env:
+          NODESEEK_COOKIE: ${{ secrets.NODESEEK_COOKIE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_USER_ID: ${{ secrets.TG_USER_ID }}
