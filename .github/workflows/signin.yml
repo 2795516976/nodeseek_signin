@@ -3,20 +3,64 @@ name: NodeSeek Signin
 on:
   schedule:
     - cron: "0 0 * * *"   # 每天 UTC 0 点（北京时间早 8 点）
-  workflow_dispatch:       # 允许手动触发
+  workflow_dispatch: {}
 
 jobs:
-  build:
+  signin:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: none
+    env:
+      # 固定 UA，减少被风控几率；可按需调整
+      UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36
+      NODESEEK_COOKIE: ${{ secrets.NODESEEK_COOKIE }}
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_USER_ID: ${{ secrets.TG_USER_ID }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Random jitter (0-120s)
+        run: sleep $((RANDOM % 120))
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install requests cloudscraper
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # 如果你有 requirements.txt，优先用它；否则按需安装
+      - name: Install deps
+        run: |
+          set -euxo pipefail
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install requests cloudscraper
+          fi
+
       - name: Run signin
-        run: python nodeseek_signin.py
-        env:
-          NODESEEK_COOKIE: ${{ secrets.NODESEEK_COOKIE }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_USER_ID: ${{ secrets.TG_USER_ID }}
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts
+          # 运行脚本，并把标准输出也保存，便于 TG/调试复用
+          python nodeseek_signin.py | tee artifacts/out.json
+        # 注意：不要继续执行 on-error，这样失败会“真红”
+        # continue-on-error: false  # 默认就是 false，写出来更直观
+
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodeseek-debug
+          path: artifacts
